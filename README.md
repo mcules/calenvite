@@ -5,7 +5,6 @@ A simple microservice designed in [GO](https://golang.org/) using [Echo Microfra
 
 # Features
 
-- Send emails using your Mailgun API credentials.
 - Send using a standar SMTP server.
 - Support for HTML and Plain Text emails.
 - Calendar invitation with RSVP.
@@ -41,10 +40,6 @@ $ ./calenvite
 There's a few env vars that you need to set when you launch the container in order to work:
 
 ```
-# If you want use Mailgun API:
-CALENVITE_SVC_MAILGUN_DOMAIN: The domain from which the email are going to be sent
-CALENVITE_SVC_MAILGUN_KEY: The Mailgun API secret key
-
 # If you want to use SMTP:
 CALENVITE_SVC_SMTP_HOST: The host/ip of the SMTP server
 CALENVITE_SVC_SMTP_PORT: The port of the SMTP server
@@ -53,28 +48,11 @@ CALENVITE_SVC_SMTP_PASSWORD: The password to authenticate to the SMTP server
 
 # common to both options
 CALENVITE_SVC_EMAIL_SENDER_ADDRESS: The email address that would be used to send the email (this value will be used in the FROM part of the email)
-CALENVITE_SVC_SEND_USING: MAILGUN or SMTP
+CALENVITE_SVC_SEND_USING: SMTP
 CALENVITE_SVC_PORT: Port to expose (optional, default: 8000)
 ```
 
 ### Sample docker-compose files included
-
-```
-# mailgun-docker-compose.yml
-
-version: "3.9"
-services:
-  app_backend:
-    image: calenvite_svc:latest
-    ports:
-      - "8080:8000"
-    environment:
-      - CALENVITE_SVC_MAILGUN_DOMAIN=mycooldomain.com
-      - CALENVITE_SVC_MAILGUN_KEY=abcd1234
-      - CALENVITE_SVC_EMAIL_SENDER_ADDRESS=no-reply@mycooldomain.com
-      - CALENVITE_SVC_SEND_USING=MAILGUN
-```
-
 
 ```
 # smtp-docker-compose.yml
@@ -108,7 +86,7 @@ A healthcheck endpoint to test if the service is up and running and a valid conf
 
 ### Request Example
 
-`curl --location --request GET 'http://127.0.0.1:8080/healthcheck'`
+`curl --location --request GET 'http://127.0.0.1:8080/healthcheck/'`
 
 ### Responses
 

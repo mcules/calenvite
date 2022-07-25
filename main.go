@@ -4,6 +4,7 @@ import (
 	"calenvite/models"
 	"context"
 	"fmt"
+	"github.com/labstack/echo/v4"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,18 +17,12 @@ import (
 
 	ics "github.com/arran4/golang-ical"
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/mailgun/mailgun-go/v4"
 	"gopkg.in/go-playground/validator.v9"
-	gomail "gopkg.in/gomail.v2"
+	"gopkg.in/gomail.v2"
 )
 
 var settings = models.Settings{
-	Mailgun: models.Mailgun{
-		Domain:    os.Getenv("CALENVITE_SVC_MAILGUN_DOMAIN"),
-		SecretKey: os.Getenv("CALENVITE_SVC_MAILGUN_KEY"),
-	},
 	SMTP: models.SMTP{
 		Host:     os.Getenv("CALENVITE_SVC_SMTP_HOST"),
 		Port:     os.Getenv("CALENVITE_SVC_SMTP_PORT"),
@@ -49,31 +44,18 @@ var API500Error = models.APIResponse{
 var validate *validator.Validate
 
 func HealthcheckHandler(c echo.Context) error {
-
 	if value, ok := os.LookupEnv("CALENVITE_SVC_SEND_USING"); ok {
-		if value != "MAILGUN" && value != "SMTP" {
-			log.Printf("Env var CALENVITE_SVC_SEND_USING value invalid: %s. Valid Values: MAILGUN or SMTP. Check documentation\n", value)
+		if value != "SMTP" {
+			log.Printf("Env var CALENVITE_SVC_SEND_USING value invalid: %s. Valid Values: SMTP. Check documentation\n", value)
 			return c.JSON(http.StatusInternalServerError, nil)
 		}
 	} else {
 		log.Println("Env var CALENVITE_SVC_SEND_USING not set. Check documentation")
 		return c.JSON(http.StatusInternalServerError, nil)
-
 	}
 
 	if value, ok := os.LookupEnv("CALENVITE_SVC_SEND_USING"); ok {
-		if value == "MAILGUN" {
-			if _, ok := os.LookupEnv("CALENVITE_SVC_MAILGUN_DOMAIN"); !ok {
-				log.Println("Env var CALENVITE_SVC_MAILGUN_DOMAIN not set. Check documentation")
-				return c.JSON(http.StatusInternalServerError, nil)
-			}
-
-			if _, ok := os.LookupEnv("CALENVITE_SVC_MAILGUN_KEY"); !ok {
-				log.Println("Env var CALENVITE_SVC_MAILGUN_KEY not set. Check documentation")
-				return c.JSON(http.StatusInternalServerError, nil)
-
-			}
-		} else if value == "SMTP" {
+		if value == "SMTP" {
 			if _, ok := os.LookupEnv("CALENVITE_SVC_SMTP_HOST"); !ok {
 				log.Println("Env var CALENVITE_SVC_SMTP_HOST not set. Check documentation")
 				return c.JSON(http.StatusInternalServerError, nil)
@@ -102,11 +84,9 @@ func HealthcheckHandler(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, nil)
-
 }
 
 func InviteHandler(c echo.Context) error {
-
 	payload := new(models.RequestPayload)
 
 	if err := c.Bind(payload); err != nil {
@@ -128,11 +108,8 @@ func InviteHandler(c echo.Context) error {
 	err := validate.Struct(payload)
 
 	if err != nil {
-
-		var fieldErr = []models.ErrorFields{}
-
+		var fieldErr []models.ErrorFields
 		for _, err := range err.(validator.ValidationErrors) {
-
 			fieldErr = append(fieldErr, models.ErrorFields{
 				Field:   err.Field(),
 				Message: "",
@@ -159,16 +136,13 @@ func InviteHandler(c echo.Context) error {
 
 	// create ics file
 	if !reflect.ValueOf(payload.Invitation).IsNil() {
-
 		startAt, err := time.Parse(time.RFC3339, payload.Invitation.StartAt)
-
 		if err != nil {
 			log.Printf("Error parsing StartAt value: %s", payload.Invitation.StartAt)
 			return c.JSON(http.StatusInternalServerError, API500Error)
 		}
 
 		endAt, err := time.Parse(time.RFC3339, payload.Invitation.EndAt)
-
 		if err != nil {
 			log.Printf("Error parsing EndAt value: %s", payload.Invitation.EndAt)
 			return c.JSON(http.StatusInternalServerError, API500Error)
@@ -191,14 +165,12 @@ func InviteHandler(c echo.Context) error {
 		icsOrganizer := createICS(startAt, endAt, payload.Invitation.EventSummary, payload.Invitation.Description, payload.Invitation.Location, payload.Invitation.OrganizerEmail, payload.Invitation.OrganizerFullName, attendees, ics.MethodPublish)
 
 		icsFileAttendees, err := ioutil.TempFile(os.TempDir(), "*.ics")
-
 		if err != nil {
 			log.Printf("Failed to write to temporary file: %s", err)
 			return c.JSON(http.StatusInternalServerError, API500Error)
 		}
 
 		icsFileOrganizer, err := ioutil.TempFile(os.TempDir(), "*.ics")
-
 		if err != nil {
 			log.Printf("Failed to write to temporary file: %s", err)
 			return c.JSON(http.StatusInternalServerError, API500Error)
@@ -228,11 +200,7 @@ func InviteHandler(c echo.Context) error {
 	}
 
 	// send emails to users
-	if settings.SendUsing == "MAILGUN" {
-		_, err = sendEmailMailgun(payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, emailsAddress, calendarICSFileAttendees)
-	} else {
-		err = sendEmailSMTP(emailsAddress, payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, calendarICSFileAttendees)
-	}
+	err = sendEmailSMTP(emailsAddress, payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, calendarICSFileAttendees)
 
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, API500Error)
@@ -242,16 +210,11 @@ func InviteHandler(c echo.Context) error {
 	// so the event gets created on his calendar
 	// (Only if an invitation is created)
 	if calendarICSFileOrganizer != "" {
-
 		var organizer []string
 		organizer = append(organizer, payload.Invitation.OrganizerEmail)
 
 		// send email to organizer
-		if settings.SendUsing == "MAILGUN" {
-			_, err = sendEmailMailgun(payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, organizer, calendarICSFileOrganizer)
-		} else {
-			err = sendEmailSMTP(organizer, payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, calendarICSFileOrganizer)
-		}
+		err = sendEmailSMTP(organizer, payload.EmailSubject, payload.EmailBody, payload.EmailIsHTML, calendarICSFileOrganizer)
 	}
 
 	if err != nil {
@@ -259,54 +222,16 @@ func InviteHandler(c echo.Context) error {
 	}
 
 	var res models.APIResponse
-
 	res = models.APIResponse{
 		Message:    "SENT_OK",
 		StatusCode: http.StatusOK,
 	}
 
 	return c.JSON(res.StatusCode, res)
-
-}
-
-func sendEmailMailgun(subject string, body string, isHTML bool, recipients []string, attachment string) (string, error) {
-
-	mg := mailgun.NewMailgun(settings.Mailgun.Domain, settings.Mailgun.SecretKey)
-
-	sender := settings.SenderAddress
-
-	message := mg.NewMessage(sender, subject, body, recipients[0])
-
-	if isHTML {
-		message.SetHtml(body)
-	}
-
-	if attachment != "" {
-		message.AddAttachment(attachment)
-	}
-
-	for _, e := range recipients {
-		message.AddCC(e)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-
-	// Send the message	with a 10 second timeout
-	_, id, err := mg.Send(ctx, message)
-
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-
-	return id, nil
 }
 
 func sendEmailSMTP(recipients []string, subject string, body string, isHTML bool, attachment string) error {
-
 	m := gomail.NewMessage()
-
 	m.SetHeader("From", settings.SenderAddress)
 	m.SetHeader("Subject", subject)
 
@@ -324,7 +249,6 @@ func sendEmailSMTP(recipients []string, subject string, body string, isHTML bool
 
 	// Settings for SMTP server
 	port, err := strconv.Atoi(settings.SMTP.Port)
-
 	if err != nil {
 		fmt.Println(err)
 		return err
@@ -341,7 +265,6 @@ func sendEmailSMTP(recipients []string, subject string, body string, isHTML bool
 }
 
 func createICS(startAt time.Time, endAt time.Time, summary string, description string, location string, organizerEmail string, organizerFullName string, attendees map[string]string, methodRequest ics.Method) string {
-
 	cal := ics.NewCalendar()
 	cal.SetMethod(methodRequest)
 	event := cal.AddEvent(fmt.Sprintf("%s%s", uuid.New(), organizerEmail))
@@ -363,7 +286,6 @@ func createICS(startAt time.Time, endAt time.Time, summary string, description s
 }
 
 func main() {
-
 	// Echo instance
 	e := echo.New()
 	e.Use(middleware.Logger())
@@ -372,7 +294,7 @@ func main() {
 		Level: 5,
 	}))
 
-	e.GET("/healthcheck", HealthcheckHandler)
+	e.GET("/healthcheck/", HealthcheckHandler)
 	e.POST("/invite/", InviteHandler)
 
 	// set default port
@@ -397,5 +319,4 @@ func main() {
 	if err := e.Shutdown(ctx); err != nil {
 		e.Logger.Fatal(err)
 	}
-
 }

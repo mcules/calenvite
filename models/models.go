@@ -2,17 +2,10 @@ package models
 
 // Settings ...
 type Settings struct {
-	Mailgun       Mailgun
 	SMTP          SMTP
 	SenderAddress string
 	SendUsing     string
 	ServicePort   string
-}
-
-// Mailgun ...
-type Mailgun struct {
-	Domain    string
-	SecretKey string
 }
 
 // SMTP ...
